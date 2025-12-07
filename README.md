@@ -1,235 +1,56 @@
-// WordScrambleScreen.swift
+# WordScramble
 
-import SwiftUI
+A modern SwiftUI take on the classic word game. Make as many valid words as you can from a randomly chosen root word — with smooth animations, helpful validation, and a clean architecture under the hood.
 
-struct WordScrambleScreen: View {
-    @StateObject private var viewModel = WordScrambleViewModel()
-    @FocusState private var isInputFocused: Bool
+## Features
 
-    var body: some View {
-        NavigationStack {
-            List {
-                ScoreHeaderView(score: viewModel.score, wordCount: viewModel.usedWords.count)
-                WordInputSection(
-                    currentGuess: $viewModel.currentGuess,
-                    onSubmit: submitWord
-                )
-                GuessedWordsView(words: viewModel.usedWords)
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle(viewModel.rootWord ?? "Word Scramble")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("New Game") {
-                        startNewGame()
-                    }
-                }
-            }
-            .overlay {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.ultraThinMaterial)
-                        .edgesIgnoringSafeArea(.all)
-                }
-            }
-            .alert(item: $viewModel.invalidInputError) { error in
-                Alert(
-                    title: Text("Invalid Word"),
-                    message: Text(error.localizedDescription),
-                    dismissButton: .default(Text("OK")) {
-                        viewModel.invalidInputError = nil
-                    }
-                )
-            }
-            .onAppear {
-                startNewGame()
-            }
-            .onChange(of: viewModel.invalidInputError) { error in
-                if error != nil {
-                    sensoryFeedback(.error)
-                }
-            }
-            .onChange(of: viewModel.usedWords) { _ in
-                sensoryFeedback(.success)
-            }
-            .focused($isInputFocused)
-        }
-    }
+- SwiftUI-first interface with smooth animations and system effects
+- Score tracking and guessed word list
+- Live validation with friendly error messages
+- New Game flow with loading state overlay
+- Haptic/sensory feedback on success and errors
+- Clean architecture with Use Cases and Repository pattern
 
-    private func startNewGame() {
-        Task {
-            await viewModel.startNewGame()
-            isInputFocused = true
-        }
-    }
+## Screenshots
 
-    private func submitWord() {
-        Task {
-            await viewModel.submitCurrentGuess()
-            isInputFocused = true
-        }
-    }
-}
+> Replace these placeholders with your own images or GIFs.
 
-// MARK: - Subviews
+- Gameplay
+  - ![Gameplay](docs/images/gameplay.png)
+- Validation
+  - ![Validation](docs/images/validation.png)
 
-struct ScoreHeaderView: View {
-    let score: Int
-    let wordCount: Int
+## Architecture Overview
 
-    var body: some View {
-        HStack {
-            Label("Score: \(score)", systemImage: "star.fill")
-                .foregroundColor(.yellow)
-                .font(.headline)
-            Spacer()
-            Label("Words: \(wordCount)", systemImage: "list.bullet")
-                .font(.headline)
-        }
-        .padding(.vertical, 8)
-    }
-}
+The app follows a lightweight clean architecture:
 
-struct WordInputSection: View {
-    @Binding var currentGuess: String
-    var onSubmit: () -> Void
+- Views (SwiftUI): Render UI and forward user intents
+- ViewModel: Exposes state (root word, used words, score, errors, loading) and orchestrates use cases
+- Use Cases:
+  - StartNewGameUseCase — loads a new root word from a repository
+  - SubmitWordUseCase — validates and scores a guess via a validator
+- Repository: LocalWordListRepository provides root words
+- Validation: NativeLanguageWordValidator validates words for a given language
 
-    @FocusState private var isTextFieldFocused: Bool
+This separation keeps UI simple, business logic testable, and dependencies clear.
 
-    var body: some View {
-        Section {
-            HStack {
-                TextField("Enter word", text: $currentGuess)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .focused($isTextFieldFocused)
-                    .onSubmit {
-                        onSubmit()
-                        currentGuess = ""
-                    }
-                Button("Submit") {
-                    onSubmit()
-                    currentGuess = ""
-                    isTextFieldFocused = true
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(currentGuess.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(.vertical, 8)
-        }
-    }
-}
+## Notable UI Details
 
-struct GuessedWordsView: View {
-    let words: [String]
+- List with `.insetGrouped` style
+- ProgressView overlay with `.ultraThinMaterial` while loading
+- `sensoryFeedback(.success)` when a valid word is accepted
+- `sensoryFeedback(.error)` when input is invalid
+- Focus handling using `@FocusState` for fast, repeated submissions
 
-    var body: some View {
-        Section("Guessed Words") {
-            if words.isEmpty {
-                Text("No words yet")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(words, id: \.self) { word in
-                    Text(word)
-                }
-            }
-        }
-    }
-}
+## Requirements
 
-// MARK: - ViewModel
+- Xcode 15+ (recommended: latest Xcode)
+- iOS 17+
+- Swift 5.9+
 
-@MainActor
-final class WordScrambleViewModel: ObservableObject {
-    @Published var rootWord: String?
-    @Published var usedWords: [String] = []
-    @Published var score: Int = 0
-    @Published var invalidInputError: WordValidationError?
-    @Published var isLoading: Bool = false
-    @Published var currentGuess: String = ""
+## Getting Started
 
-    private let startNewGameUseCase: StartNewGameUseCase
-    private let submitWordUseCase: SubmitWordUseCase
-
-    init(
-        startNewGameUseCase: StartNewGameUseCase = StartNewGameUseCase(repository: LocalWordListRepository()),
-        submitWordUseCase: SubmitWordUseCase = SubmitWordUseCase(validator: NativeLanguageWordValidator(language: .english))
-    ) {
-        self.startNewGameUseCase = startNewGameUseCase
-        self.submitWordUseCase = submitWordUseCase
-    }
-
-    func startNewGame() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            rootWord = try await startNewGameUseCase.execute()
-            usedWords = []
-            score = 0
-            invalidInputError = nil
-            currentGuess = ""
-        } catch {
-            // Handle error fetching root word: fallback to a default word or show alert
-            rootWord = "silkworm"
-            usedWords = []
-            score = 0
-            invalidInputError = nil
-            currentGuess = ""
-        }
-    }
-
-    func submitCurrentGuess() async {
-        let guess = currentGuess.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !guess.isEmpty else { return }
-        guard let rootWord else { return }
-
-        do {
-            try submitWordUseCase.execute(word: guess, rootWord: rootWord, usedWords: usedWords)
-            usedWords.insert(guess, at: 0)
-            score += guess.count
-            currentGuess = ""
-            invalidInputError = nil
-        } catch let error as WordValidationError {
-            invalidInputError = error
-        } catch {
-            invalidInputError = .unknown
-        }
-    }
-}
-
-// MARK: - Feedback Helper
-
-fileprivate func sensoryFeedback(_ type: UINotificationFeedbackGenerator.FeedbackType) {
-    let generator = UINotificationFeedbackGenerator()
-    generator.notificationOccurred(type)
-}
-
-// MARK: - Errors
-
-enum WordValidationError: LocalizedError, Identifiable {
-    var id: String { localizedDescription }
-
-    case empty
-    case sameAsRoot
-    case alreadyUsed
-    case invalid
-    case unknown
-
-    var errorDescription: String? {
-        switch self {
-        case .empty:
-            return "The word cannot be empty."
-        case .sameAsRoot:
-            return "You cannot use the root word itself."
-        case .alreadyUsed:
-            return "You've already used that word."
-        case .invalid:
-            return "This is not a valid English word."
-        case .unknown:
-            return "An unknown error occurred."
-        }
-    }
-}
+1. Clone the repository
+   ```bash
+   git clone https://github.com/your-username/WordScramble.git
+   cd WordScramble
